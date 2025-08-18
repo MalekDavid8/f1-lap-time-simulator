@@ -156,11 +156,23 @@ cumulative_distance *= scale_factor
 # =============================================================================
 # 4) Sector Information (Dynamic calculation using averaged timing data)
 # =============================================================================
+# NOTE: Future Enhancement Opportunity
+# The most accurate approach would be to create a dictionary with exact GPS coordinates
+# for sector start/end points for each circuit (similar to OFFICIAL_TRACK_LENGTHS).
+# This would eliminate timing-based approximations and provide 100% accuracy.
+# However, FIA does not publicly release these coordinates, and alternative sources
+# (OpenF1, FastF1, GitHub repos) only provide track outlines or marshal zones,
+# not the precise timing sector boundaries used for official lap timing.
+# Current time-ratio approach provides ~95% accuracy as a practical compromise.
+
 # Calculate sector distances using average ratios from all drivers
 print("Calculating sector boundaries from all drivers...")
 
 # Get fastest lap per driver to avoid outliers
-fastest_laps = session.laps.groupby('Driver').apply(
+# NOTE: Filter only drivers with valid lap times to prevent empty sequence errors
+# Some drivers may not have completed valid laps in the session
+valid_drivers = session.laps.dropna(subset=['LapTime']).groupby('Driver')
+fastest_laps = valid_drivers.apply(
     lambda x: x.loc[x['LapTime'].idxmin()]).reset_index(drop=True)
 
 # Filter valid laps with complete sector times

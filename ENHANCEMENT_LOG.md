@@ -109,6 +109,12 @@ DRIVER = input("Enter driver code (e.g., PIA): ").upper()
 - Implemented fallback mechanisms
 - Enhanced code documentation
 
+#### Robust Data Handling
+
+- **Empty Sequence Protection:** Added validation to filter only drivers with valid lap times before calculating fastest laps, preventing `ValueError: attempt to get argmin of an empty sequence` when some drivers haven't completed valid laps
+- **Null Data Filtering:** Comprehensive `dropna()` operations to handle missing sector times
+- **Graceful Degradation:** Fallback to single-lap data when multi-driver averaging fails
+
 #### Performance Optimizations
 
 - Multi-driver averaging for robust sector calculation
