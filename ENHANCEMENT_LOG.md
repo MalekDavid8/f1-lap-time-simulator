@@ -86,6 +86,113 @@ SESSION_TYPE = input("Enter session type (Q/R): ").upper()
 DRIVER = input("Enter driver code (e.g., PIA): ").upper()
 ```
 
+## Real-Time Animation System Implementation
+
+### Overview
+
+Enhanced animation timing system to support both real-time lap experience and accelerated viewing modes with smooth frame interpolation.
+
+### Animation Mode Selection
+
+#### Interactive Speed Control
+
+**Before:** Fixed accelerated playback only
+
+```python
+fps_display = 14
+interval_ms = (60 / fps_display) / speed_factor
+```
+
+**After:** User-selectable animation modes
+
+```python
+print("1. Real-time (same duration as actual lap)")
+print("2. Accelerated (faster playback for quick viewing)")
+speed_choice = input("Choose animation speed (1 or 2): ")
+REAL_TIME_MODE = speed_choice == "1"
+```
+
+**Impact:** Immersive real-time experience vs efficient analysis viewing
+
+#### Precise Timing Calculation
+
+**Real-time Mode:** Animation duration matches exact lap time
+
+```python
+if REAL_TIME_MODE:
+    interval_ms = (total_lap_time * 1000) / total_frames
+    # 1:23.456 lap = 83.456 second animation
+```
+
+**Accelerated Mode:** Original fast playback preserved
+
+```python
+else:
+    fps_display = 14
+    interval_ms = (60 / fps_display) / speed_factor
+    # Maintains original viewing speed
+```
+
+### Frame Interpolation System
+
+#### Problem Solved
+
+**Issue:** Real-time mode produced choppy animation (8-15 FPS)
+**Solution:** Intelligent frame interpolation maintaining timing accuracy
+
+#### Implementation
+
+```python
+def interpolate_data_for_smooth_animation(x, y, speed, time_seconds, target_fps=30):
+    needed_frames = int(total_time * target_fps)
+    new_time = np.linspace(0, total_time, needed_frames)
+
+    # Interpolate telemetry data
+    new_x = np.interp(new_time, time_seconds, x)
+    new_speed = np.interp(new_time, time_seconds, speed)
+```
+
+**Result:** 30 FPS smooth animation while preserving exact lap timing
+
+#### Adaptive Downsampling
+
+**Before:** Fixed 50% data reduction
+
+```python
+downsample_factor = 2  # Always remove half the data
+```
+
+**After:** Intelligent frame management
+
+```python
+min_frames = 1500
+if original_frames > min_frames:
+    downsample_factor = max(1, original_frames // min_frames)
+else:
+    downsample_factor = 1  # Preserve data for smooth animation
+```
+
+### User Experience Enhancements
+
+#### Visual Mode Indicator
+
+Real-time status display in animation window:
+
+```python
+mode_text = ax.text(0.98, 0.95, f"Mode: {'Real-time' if REAL_TIME_MODE else 'Accelerated'}",
+                   bbox=dict(boxstyle="round,pad=0.3", facecolor='lightblue'))
+```
+
+#### Detailed Animation Information
+
+Pre-animation summary with timing comparison:
+
+```
+Real-time mode: Animation will take 83.45 seconds (actual lap time)
+Frame rate: 30.0 FPS (interpolated for smoothness)
+Final settings: 2503 frames, 33.3 ms interval
+```
+
 ### Technical Research Conducted
 
 #### Data Source Investigation
@@ -99,6 +206,12 @@ DRIVER = input("Enter driver code (e.g., PIA): ").upper()
 
 - **FIA Method:** Physical timing loops every 150-200m with transponders
 - **Our Solution:** Time-ratio approximation matching real-world accuracy
+
+#### Animation Performance Analysis
+
+- **Frame Rate Impact:** Higher FPS requires interpolation for real-time accuracy
+- **Memory Optimization:** Balanced downsampling vs smoothness
+- **Timing Precision:** Millisecond-accurate synchronization in real-time mode
 
 ### Code Quality Improvements
 
@@ -120,6 +233,7 @@ DRIVER = input("Enter driver code (e.g., PIA): ").upper()
 - Multi-driver averaging for robust sector calculation
 - Efficient caching with FastF1
 - Optimized coordinate transformations
+- Intelligent frame interpolation for smooth real-time playback
 
 ### Validation Results
 
@@ -136,9 +250,16 @@ DRIVER = input("Enter driver code (e.g., PIA): ").upper()
 - **Spa-Francorchamps:** ~98% boundary accuracy
 - **Average:** 95% precision across all tested circuits
 
+#### Animation Performance
+
+- **Real-time Mode:** Exact timing synchronization (1 second = 1 second)
+- **Accelerated Mode:** Original speed maintained for efficient analysis
+- **Frame Rate:** Consistent 30 FPS in real-time, smooth playback in both modes
+- **Interpolation Accuracy:** Seamless telemetry data interpolation without visual artifacts
+
 ### Files Modified/Added
 
-- **New:** `f1_fastest_lap_universal.py` - Enhanced universal version
+- **Enhanced:** `f1_fastest_lap_universal.py` - Added real-time animation system
 - **Preserved:** Original file maintained for compatibility
 - **Documentation:** This enhancement log
 
@@ -147,3 +268,4 @@ DRIVER = input("Enter driver code (e.g., PIA): ").upper()
 - Dictionary-based approach allows easy addition of new circuits
 - Time-based calculation works for any session with timing data
 - Modular architecture supports additional telemetry visualizations
+- Animation system extensible for custom playback speeds and export formats

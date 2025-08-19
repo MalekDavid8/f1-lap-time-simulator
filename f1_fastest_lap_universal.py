@@ -1,5 +1,5 @@
 """
-F1 Fastest Lap Visualization – Universal Circuit Support
+F1 Fastest Lap Visualization – Universal Circuit Support with Real-Time Option
 
 This script uses FastF1 telemetry data to animate the fastest lap of any F1 driver
 on any circuit, displaying real-time speed, sector timing, and distance information
@@ -12,6 +12,7 @@ Features:
     - Real-time telemetry animation with speed and sector information
     - Automatic coordinate rotation based on circuit layout
     - Performance optimization with intelligent downsampling
+    - Choice between real-time and accelerated animation playback
 
 Requirements:
     - fastf1
@@ -29,7 +30,8 @@ Important Note:
 Original Author: Malek El Kahza
 Enhanced by: Víctor Vega Sobral (@VforVitorio)
 Contributions: Universal circuit support, dynamic sector calculation, 
-               official track lengths integration, improved user interface
+               official track lengths integration, improved user interface,
+               real-time playback option
 """
 
 from fastf1 import plotting
@@ -87,6 +89,13 @@ SESSION_TYPE = input(
     "Enter session type (Q for Qualifying, R for Race): ").upper()
 DRIVER = input("Enter driver code (e.g., PIA, VER, HAM): ").upper()
 
+# New: Animation speed selection
+print("\n=== Animation Speed Options ===")
+print("1. Real-time (same duration as actual lap)")
+print("2. Accelerated (faster playback for quick viewing)")
+speed_choice = input("Choose animation speed (1 or 2): ").strip()
+REAL_TIME_MODE = speed_choice == "1"
+
 # =============================================================================
 # 2) Load Session Data
 # =============================================================================
@@ -102,6 +111,10 @@ if laps.empty:
 # Get fastest lap telemetry
 lap = laps.pick_fastest()
 tel = lap.get_telemetry()
+
+# Display lap time for reference
+lap_time_str = str(lap['LapTime']).split()[-1]  # Extract time portion
+print(f"Fastest lap time: {lap_time_str}")
 
 # =============================================================================
 # 3) GPS & Telemetry Preprocessing
@@ -225,9 +238,20 @@ idx_sector2_end = np.where(cumulative_distance <= sector2_distance)[
     0][-1] if len(np.where(cumulative_distance <= sector2_distance)[0]) > 0 else 0
 
 # =============================================================================
-# 5) Downsampling for Performance
+# 5) Intelligent Downsampling and Frame Interpolation
 # =============================================================================
-downsample_factor = 2
+# Reduce downsampling for smoother animation (was 2, now adaptive)
+min_frames = 1500  # Minimum frames for smooth animation
+original_frames = len(x)
+
+if original_frames > min_frames:
+    downsample_factor = max(1, original_frames // min_frames)
+else:
+    downsample_factor = 1  # No downsampling if already low frame count
+
+print(
+    f"Original frames: {original_frames}, Downsample factor: {downsample_factor}")
+
 x = x[::downsample_factor]
 y = y[::downsample_factor]
 speed = speed[::downsample_factor]
@@ -237,8 +261,52 @@ colors = colors[::downsample_factor]
 idx_sector2_end //= downsample_factor
 
 # =============================================================================
-# 6) Plot Setup
+# 6) Frame Interpolation for Smooth Real-Time Animation
 # =============================================================================
+
+
+def interpolate_data_for_smooth_animation(x, y, speed, time_seconds, cumulative_distance, colors, target_fps=30):
+    """Interpolate frames to achieve target FPS while maintaining accurate timing."""
+    total_time = time_seconds[-1]
+    current_frames = len(x)
+    needed_frames = int(total_time * target_fps)
+
+    if needed_frames <= current_frames:
+        return x, y, speed, time_seconds, cumulative_distance, colors
+
+    print(
+        f"Interpolating from {current_frames} to {needed_frames} frames for {target_fps} FPS")
+
+    # Create new time array with target FPS
+    new_time = np.linspace(0, total_time, needed_frames)
+
+    # Interpolate all data arrays
+    new_x = np.interp(new_time, time_seconds, x)
+    new_y = np.interp(new_time, time_seconds, y)
+    new_speed = np.interp(new_time, time_seconds, speed)
+    new_distance = np.interp(new_time, time_seconds, cumulative_distance)
+
+    # Interpolate colors (assign nearest color)
+    color_indices = np.searchsorted(time_seconds, new_time, side='left')
+    color_indices = np.clip(color_indices, 0, len(colors) - 1)
+    new_colors = colors[color_indices]
+
+    return new_x, new_y, new_speed, new_time, new_distance, new_colors
+
+
+# =============================================================================
+# 7) Plot Setup
+# =============================================================================
+# Apply frame interpolation for real-time mode to ensure smooth animation
+if REAL_TIME_MODE:
+    x, y, speed, time_seconds, cumulative_distance, colors = interpolate_data_for_smooth_animation(
+        x, y, speed, time_seconds, cumulative_distance, colors, target_fps=30)
+    # Recalculate sector indices after interpolation
+    idx_sector1_end = np.where(cumulative_distance <= sector1_distance)[
+        0][-1] if len(np.where(cumulative_distance <= sector1_distance)[0]) > 0 else 0
+    idx_sector2_end = np.where(cumulative_distance <= sector2_distance)[
+        0][-1] if len(np.where(cumulative_distance <= sector2_distance)[0]) > 0 else 0
+
 points = np.array([x, y]).T.reshape(-1, 1, 2)
 segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
@@ -259,6 +327,12 @@ sector_text = ax.text(
 track_text = ax.text(
     0.02, 0.80, '', transform=ax.transAxes, fontsize=10, va='top')
 
+# Add mode indicator
+mode_text = ax.text(
+    0.98, 0.95, f"Mode: {'Real-time' if REAL_TIME_MODE else 'Accelerated'}",
+    transform=ax.transAxes, fontsize=9, va='top', ha='right',
+    bbox=dict(boxstyle="round,pad=0.3", facecolor='lightblue', alpha=0.7))
+
 # Formatting
 ax.set_xlim(min(x) - 50, max(x) + 50)
 ax.set_ylim(min(y) - 50, max(y) + 50)
@@ -270,7 +344,33 @@ for spine in ax.spines.values():
 ax.legend()
 
 # =============================================================================
-# 7) Animation Update Function
+# 8) Animation Timing Calculation - Accurate Real-Time with Interpolation
+# =============================================================================
+# Calculate animation parameters based on user choice
+total_lap_time = time_seconds[-1]  # Real lap duration in seconds
+total_frames = len(x)
+
+if REAL_TIME_MODE:
+    # Real-time: EXACT timing with smooth 30 FPS thanks to interpolation
+    interval_ms = (total_lap_time * 1000) / total_frames
+    actual_fps = 1000 / interval_ms
+    print(
+        f"Real-time mode: Animation will take {total_lap_time:.2f} seconds (actual lap time)")
+    print(f"Frame rate: {actual_fps:.1f} FPS (interpolated for smoothness)")
+else:
+    # Accelerated mode: use original fast playback speed
+    fps_display = 14
+    speed_factor = 1.0
+    interval_ms = (60 / fps_display) / speed_factor
+    animation_duration = (interval_ms * total_frames) / 1000
+    print(
+        f"Accelerated mode: Animation will take {animation_duration:.1f} seconds (vs {total_lap_time:.1f}s real lap)")
+    print(f"Frame rate: Original accelerated speed")
+
+print(f"Final settings: {total_frames} frames, {interval_ms:.1f} ms interval")
+
+# =============================================================================
+# 8) Animation Update Function
 # =============================================================================
 
 
@@ -302,12 +402,17 @@ def update(frame):
 
 
 # =============================================================================
-# 8) Run Animation in Matplotlib Window
+# 9) Run Animation in Matplotlib Window
 # =============================================================================
-fps_display = 14
-speed_factor = 1.0
-interval_ms = (60 / fps_display) / speed_factor
+ani = FuncAnimation(fig, update, frames=total_frames,
+                    interval=interval_ms, blit=True)
 
-ani = FuncAnimation(fig, update, frames=len(
-    x), interval=interval_ms, blit=True)
+# Show additional info before starting
+print(f"\n=== Starting Animation ===")
+print(f"Driver: {DRIVER}")
+print(f"Circuit: {GRAND_PRIX}")
+print(f"Lap time: {lap_time_str}")
+print(f"Animation mode: {'Real-time' if REAL_TIME_MODE else 'Accelerated'}")
+print("Close the window to exit.")
+
 plt.show()
